@@ -1,0 +1,19 @@
+{
+	"name": "DS_ADLS_Clickstream_Binary_Source",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_ADLS_AtliqCommerce",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Binary",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"folderPath": "landing/clickstream",
+				"fileSystem": "lakehouse"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

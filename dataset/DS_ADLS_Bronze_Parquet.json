@@ -1,0 +1,32 @@
+{
+	"name": "DS_ADLS_Bronze_Parquet",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_ADLS_AtliqCommerce",
+			"type": "LinkedServiceReference"
+		},
+		"parameters": {
+			"table_name": {
+				"type": "string"
+			},
+			"ingest_date": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "Parquet",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"folderPath": {
+					"value": "@concat(\n    'bronze/',\n    dataset().table_name,\n    if(\n        empty(dataset().ingest_date),\n        '',\n        concat('/ingest_date=', dataset().ingest_date)\n    )\n)",
+					"type": "Expression"
+				},
+				"fileSystem": "lakehouse"
+			},
+			"compressionCodec": "snappy"
+		},
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

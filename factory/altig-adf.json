@@ -1,0 +1,15 @@
+{
+	"name": "altig-adf",
+	"properties": {
+		"trustModeClaimForMi": {
+			"value": "Disabled",
+			"editable": true
+		}
+	},
+	"location": "eastus",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "632fa0e4-efe9-47ce-a7b2-952ddae0714f",
+		"tenantId": "b0acceed-8d75-4eae-807b-03326246e27a"
+	}
+}

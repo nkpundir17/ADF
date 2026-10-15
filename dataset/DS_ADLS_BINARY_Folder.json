@@ -1,0 +1,19 @@
+{
+	"name": "DS_ADLS_BINARY_Folder",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_ADLS_AtliqCommerce",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Binary",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"folderPath": "landing/csv",
+				"fileSystem": "lakehouse"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

@@ -1,0 +1,527 @@
+{
+	"name": "PL_Atliq_Commercial_Bronze_Load",
+	"properties": {
+		"activities": [
+			{
+				"name": "SV_Capture_Run_Start",
+				"type": "SetVariable",
+				"dependsOn": [],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "run_start_at",
+					"value": {
+						"value": "@utcnow()",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "LK_Get_Control_Table",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "SV_Capture_Run_Start",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "SELECT *\nFROM etl.control_table;",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_SQL_Source_Generic",
+						"type": "DatasetReference",
+						"parameters": {
+							"schema": "etl",
+							"table_name": "control_table"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "FE_Process_Control_Table",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "LK_Get_Control_Table",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('LK_Get_Control_Table').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "IF_Check_Load_Type",
+							"type": "IfCondition",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"expression": {
+									"value": "@equals(toLower(item().load_type), 'full')",
+									"type": "Expression"
+								},
+								"ifFalseActivities": [
+									{
+										"name": "CP_Incremental_Load_To_Bronze",
+										"type": "Copy",
+										"dependsOn": [],
+										"policy": {
+											"timeout": "0.12:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"source": {
+												"type": "AzureSqlSource",
+												"sqlReaderQuery": {
+													"value": "@concat(\n    'SELECT * FROM ',\n    item().source_schema,\n    '.',\n    item().table_name,\n    ' WHERE ',\n    item().watermark_column,\n    ' > ''',\n    item().last_loaded_at,\n    ''''\n)",
+													"type": "Expression"
+												},
+												"queryTimeout": "02:00:00",
+												"partitionOption": "None"
+											},
+											"sink": {
+												"type": "ParquetSink",
+												"storeSettings": {
+													"type": "AzureBlobFSWriteSettings",
+													"copyBehavior": "PreserveHierarchy"
+												},
+												"formatSettings": {
+													"type": "ParquetWriteSettings"
+												}
+											},
+											"enableStaging": false,
+											"translator": {
+												"type": "TabularTranslator",
+												"typeConversion": true,
+												"typeConversionSettings": {
+													"allowDataTruncation": true,
+													"treatBooleanAsNumber": false
+												}
+											}
+										},
+										"inputs": [
+											{
+												"referenceName": "DS_SQL_Source_Generic",
+												"type": "DatasetReference",
+												"parameters": {
+													"schema": {
+														"value": "@item().source_schema",
+														"type": "Expression"
+													},
+													"table_name": "@item().table_name"
+												}
+											}
+										],
+										"outputs": [
+											{
+												"referenceName": "DS_ADLS_Bronze_Parquet",
+												"type": "DatasetReference",
+												"parameters": {
+													"table_name": "@item().table_name",
+													"ingest_date": "@formatDateTime(variables('run_start_at'), 'yyyy-MM-dd')"
+												}
+											}
+										]
+									}
+								],
+								"ifTrueActivities": [
+									{
+										"name": "DEL_Clear_Bronze_Table_Folder",
+										"type": "Delete",
+										"dependsOn": [],
+										"policy": {
+											"timeout": "0.12:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"dataset": {
+												"referenceName": "DS_ADLS_Bronze_Parquet",
+												"type": "DatasetReference",
+												"parameters": {
+													"table_name": "@item().table_name",
+													"ingest_date": "@string('')"
+												}
+											},
+											"enableLogging": false,
+											"storeSettings": {
+												"type": "AzureBlobFSReadSettings",
+												"recursive": true,
+												"enablePartitionDiscovery": false
+											}
+										}
+									},
+									{
+										"name": "CP_Full_Load_To_Bronze",
+										"type": "Copy",
+										"dependsOn": [
+											{
+												"activity": "DEL_Clear_Bronze_Table_Folder",
+												"dependencyConditions": [
+													"Succeeded"
+												]
+											}
+										],
+										"policy": {
+											"timeout": "0.12:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"source": {
+												"type": "AzureSqlSource",
+												"sqlReaderQuery": {
+													"value": "@concat('SELECT * FROM ', item().source_schema, '.', item().table_name)",
+													"type": "Expression"
+												},
+												"queryTimeout": "02:00:00",
+												"partitionOption": "None"
+											},
+											"sink": {
+												"type": "ParquetSink",
+												"storeSettings": {
+													"type": "AzureBlobFSWriteSettings",
+													"copyBehavior": "PreserveHierarchy"
+												},
+												"formatSettings": {
+													"type": "ParquetWriteSettings"
+												}
+											},
+											"enableStaging": false,
+											"translator": {
+												"type": "TabularTranslator",
+												"typeConversion": true,
+												"typeConversionSettings": {
+													"allowDataTruncation": true,
+													"treatBooleanAsNumber": false
+												}
+											}
+										},
+										"inputs": [
+											{
+												"referenceName": "DS_SQL_Source_Generic",
+												"type": "DatasetReference",
+												"parameters": {
+													"schema": {
+														"value": "@item().source_schema",
+														"type": "Expression"
+													},
+													"table_name": "@item().table_name"
+												}
+											}
+										],
+										"outputs": [
+											{
+												"referenceName": "DS_ADLS_Bronze_Parquet",
+												"type": "DatasetReference",
+												"parameters": {
+													"table_name": "@item().table_name",
+													"ingest_date": "@string('')"
+												}
+											}
+										]
+									}
+								]
+							}
+						},
+						{
+							"name": "SC_Update_Incremental_Watermark",
+							"type": "Script",
+							"dependsOn": [
+								{
+									"activity": "IF_Check_Load_Type",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "LS_AzureSQL_AtliqCommerce",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "NonQuery",
+										"text": {
+											"value": "@concat('EXEC etl.usp_update_watermark @table_name = ''', item().table_name, ''', @run_start_at = ''', variables('run_start_at'), ''';')",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "GM_List_CSV_Files",
+				"type": "GetMetadata",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"dataset": {
+						"referenceName": "DS_ADLS_BINARY_Folder",
+						"type": "DatasetReference"
+					},
+					"fieldList": [
+						"childItems"
+					],
+					"storeSettings": {
+						"type": "AzureBlobFSReadSettings",
+						"recursive": true,
+						"enablePartitionDiscovery": false
+					},
+					"formatSettings": {
+						"type": "BinaryReadSettings"
+					}
+				}
+			},
+			{
+				"name": "Filter_CSV_Files",
+				"type": "Filter",
+				"dependsOn": [
+					{
+						"activity": "GM_List_CSV_Files",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('GM_List_CSV_Files').output.childItems",
+						"type": "Expression"
+					},
+					"condition": {
+						"value": "@and(equals(item().type, 'File'), endsWith(item().name, '.csv'))",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "ForEach_CSV_File",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Filter_CSV_Files",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Filter_CSV_Files').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "CP_CSV_To_Bronze",
+							"type": "Copy",
+							"dependsOn": [
+								{
+									"activity": "DEL_Existing_CSV_Bronze",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "DelimitedTextSource",
+									"storeSettings": {
+										"type": "AzureBlobFSReadSettings",
+										"recursive": true,
+										"enablePartitionDiscovery": false
+									},
+									"formatSettings": {
+										"type": "DelimitedTextReadSettings"
+									}
+								},
+								"sink": {
+									"type": "ParquetSink",
+									"storeSettings": {
+										"type": "AzureBlobFSWriteSettings",
+										"copyBehavior": "FlattenHierarchy"
+									},
+									"formatSettings": {
+										"type": "ParquetWriteSettings"
+									}
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "DS_ADLS_CSV_Source",
+									"type": "DatasetReference",
+									"parameters": {
+										"file_name": "@item().name"
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "DS_ADLS_Bronze_Parquet",
+									"type": "DatasetReference",
+									"parameters": {
+										"table_name": "@replace(item().name, '.csv', '')",
+										"ingest_date": "@string('')"
+									}
+								}
+							]
+						},
+						{
+							"name": "DEL_Existing_CSV_Bronze",
+							"type": "Delete",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"dataset": {
+									"referenceName": "DS_ADLS_Bronze_Delete_Folder",
+									"type": "DatasetReference",
+									"parameters": {
+										"directory": "@concat('bronze/', replace(item().name, '.csv', ''))"
+									}
+								},
+								"enableLogging": false,
+								"storeSettings": {
+									"type": "AzureBlobFSReadSettings",
+									"recursive": true,
+									"enablePartitionDiscovery": false
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "CP_Clickstream_To_Bronze",
+				"type": "Copy",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "BinarySource",
+						"storeSettings": {
+							"type": "AzureBlobFSReadSettings",
+							"recursive": true
+						},
+						"formatSettings": {
+							"type": "BinaryReadSettings"
+						}
+					},
+					"sink": {
+						"type": "BinarySink",
+						"storeSettings": {
+							"type": "AzureBlobFSWriteSettings"
+						}
+					},
+					"enableStaging": false
+				},
+				"inputs": [
+					{
+						"referenceName": "DS_ADLS_Clickstream_Binary_Source",
+						"type": "DatasetReference"
+					}
+				],
+				"outputs": [
+					{
+						"referenceName": "DS_ADLS_Clickstream_Binary_Sink",
+						"type": "DatasetReference"
+					}
+				]
+			}
+		],
+		"variables": {
+			"run_start_at": {
+				"type": "String"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2026-10-14T13:13:35Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}
